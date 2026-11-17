@@ -76,7 +76,7 @@ for d in "$SITE" "$P/acme/website" "$P/agency/clients/globex" "$HOME/sandbox/loo
   mkdir -p "$d" && git -C "$d" init -q && echo hi > "$d/README.md" && git -C "$d" add -A && git -C "$d" commit -qm init
 done
 mkdir -p "$SITE/sub" && git -C "$SITE/sub" init -q && echo sub/ >> "$SITE/.git/info/exclude"
-printf '[{"id":"acme","path":"agency/clients/globex","github":"x/acme"},{"id":"site","path":"personal/site","github":"x/site"},{"id":"acme-website","path":"acme/website","github":"x/vw"}]\n' > "$T/profiles.json"
+printf '[{"id":"acme","path":"agency/clients/globex","github":"x/acme"},{"id":"site","path":"personal/site","github":"x/site"},{"id":"acme-website","path":"acme/website","github":"example/acme-website"}]\n' > "$T/profiles.json"
 git clone -q "$SITE" "$T/worker"   # what the worker commits; the fake export takes its HEAD as the task branch
 BASE="$(git -C "$SITE" rev-parse HEAD)"
 TOK=0123456789abcdef0123456789abcdef
@@ -506,7 +506,7 @@ bwant() {  # bwant <state> <exit> <pattern in reason or ''> <what>
   [ -z "$3" ] || grep -q -- "$3" <<<"$BREASON" || fail "$4: reason '$BREASON' without '$3'"
 }
 rm -rf "$D"; mkdir -p "$D"; : > "$T/calls.log"
-printf '{"v":1,"type":"delegate","role":"tester","task":"x","project":"personal-website"}' > "$B/project.json"
+printf '{"v":1,"type":"delegate","role":"tester","task":"x","project":"example-site"}' > "$B/project.json"
 printf '{"v":1,"type":"delegate","role":"tester","task":"x","path":"acme/website"}' > "$B/path.json"
 printf '{"v":2,"type":"delegate","role":"tester","task":"x"}' > "$B/v2.json"
 printf '{"v":1,"type":"publish","role":"tester","task":"x"}' > "$B/type.json"

@@ -135,7 +135,7 @@ function parse(args: string[]): Opts {
 
 /** Every ID from outside is checked before it is used anywhere (path, argv, ref). */
 function checkId(id: string): string {
-  if (!ID.test(id)) throw new DelegateError(`invalid ID ${visible(q(id).slice(0, 60))} (expected d<MMTT>-<hhmm>-<4 hex>)`);
+  if (!ID.test(id)) throw new DelegateError(`invalid ID ${visible(q(id).slice(0, 60))} (expected d<MMDD>-<hhmm>-<4 hex>)`);
   return id;
 }
 

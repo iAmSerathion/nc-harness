@@ -1,6 +1,6 @@
 /**
  * nc orchestrator status <command> – writes the orchestrator's state for the herdr card nc-orchestrator
- * (docs/ARCHITECTURE.md, section 4). One file per Claude session: ~/.claude/nc-orchestrator/<sessionId>.json, version 3,
+ * (docs/ARCHITECTURE.md, section 4). One file per Claude session: ~/.claude/nc-orchestrator/<sessionId>.json with "v": 3,
  * written atomically (tmp file in the same folder, then rename). Every field is validated and capped here, so the
  * file is clean before the feed (herdr-nc mods/nc-session/usage.py --orch) validates it again.
  *

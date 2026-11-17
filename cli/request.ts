@@ -56,7 +56,7 @@ export function rejectUnknown(obj: Record<string, unknown>, keys: Set<string>) {
 
 // --- the broker's format (nc delegate from a task container) ----------------------------------------------------
 
-/** Task IDs of nc delegate: d<MMTT>-<hhmm>-<4 hex>; also the nc-work task and the herdr terminal of a worker. */
+/** Task IDs of nc delegate: d<MMDD>-<hhmm>-<4 hex>; also the nc-work task and the herdr terminal of a worker. */
 export const ID = /^d[0-9]{4}-[0-9]{4}-[0-9a-f]{4}$/;
 export const MODEL = /^[A-Za-z0-9._:\/#-]{1,200}$/;
 /** File name of a request in the mailbox; its answer folder in the inbox is the name without .json. */

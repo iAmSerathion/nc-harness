@@ -34,11 +34,13 @@ The layout assumes projects under `~/projects`, experiments in `~/sandbox` and n
 ## Install
 
 ```bash
-git clone https://github.com/iAmSerathion/nc-harness.git ~/projects/nc-harness
-cd ~/projects/nc-harness
+git clone https://github.com/iAmSerathion/nc-harness.git ~/projects/personal/nc-harness
+cd ~/projects/personal/nc-harness
 ./install.sh --dry-run   # shows what is linked, backed up and installed; changes nothing
 ./install.sh             # sets up, then runs nc doctor
 ```
+
+`nc-work` (in `nc-infra`) expects the checkout at `~/projects/personal/nc-harness`.
 
 `install.sh` is idempotent, needs no `sudo` and writes only below `$HOME`. Existing files at the target locations are first moved to `~/.nc/backup/<date>/`. What it links is listed in [manifest.txt](manifest.txt): the rules to `~/.claude/CLAUDE.md` and `~/.config/opencode/AGENTS.md`, every skill to `~/.claude/skills/<name>`, `nc` to `~/.local/bin/nc`. It also generates the agent files for both runtimes (`nc generate`), clones the memory (if `NC_MEMORY_REMOTE` is set) and creates an empty `~/.config/nc-harness/secrets.env` (mode 600) for you to fill in:
 

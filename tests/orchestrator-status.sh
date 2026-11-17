@@ -132,8 +132,9 @@ expect 2 'unknown task id "Z9"' nc orchestrator status task Z9 pass
 expect 2 'task status "done"' nc orchestrator status task A1 done
 expect 2 'a must answer is kept or broken' nc orchestrator status task A1 pass M1=pass
 expect 2 'state "finished"' nc orchestrator status state finished
-expect 2 'crew "plain"' nc orchestrator status crew plain
-expect 2 'unknown command "route"' nc orchestrator status route team
+expect 2 'crew "solo"' nc orchestrator status crew solo
+expect 2 'crew "big"' nc orchestrator status crew big
+expect 2 'unknown command "lane"' nc orchestrator status lane team
 expect 2 'unknown command "bogus"' nc orchestrator status bogus
 expect 2 'give a command' nc orchestrator status
 printf 'Phase 1: x\n  Lane A:\n\nsome prose\n' > "$T/empty"
@@ -142,7 +143,7 @@ printf 'Phase 1: x\n  Lane A:\n    A1 one\n    A1 two\n' > "$T/dup"
 STDIN="$T/dup" expect 2 'appears twice' nc orchestrator status plan
 [ "$(cat "$F")" = "$before" ] || fail "file changed by wrong usage"
 expect 2 'does not have the form' nc orchestrator status/x
-ok "unknown task id, bad task status / must answer / state / crew / command (route is gone), plan without tasks or with a duplicate id: exit 2, file unchanged"
+ok "unknown task id, bad task status / must answer / state / crew / command, plan without tasks or with a duplicate id: exit 2, file unchanged"
 
 # 4. caps
 long="$(printf 'x%.0s' $(seq 200))"
@@ -203,7 +204,7 @@ grep -q '^# Orchestrator' "$T/out" || fail "nc orchestrator claude printed no pr
 grep -q 'nc orchestrator status' "$T/out" || fail "the procedure does not mention nc orchestrator status"
 ok "nc orchestrator claude still prints the procedure, which publishes through nc orchestrator status"
 
-# 8. parallel calls lose no update (lock file); a v3 file of the wrong shape is a warning, exit 0; a v2 file starts over
+# 8. parallel calls lose no update (lock file); a v3 file of the wrong shape is a warning, exit 0; a file with another version starts over
 printf 'Phase 1: p\n  Lane A:\n    A1 one\n  Lane B:\n    B1 two\n  Lane C:\n    C1 three\n' > "$T/par"
 st crew team parallel
 STDIN="$T/par" st plan
@@ -219,12 +220,12 @@ expect 0 'warning: status file not usable' nc orchestrator status task A1 runnin
 touch -t 202001010000 "$F.lock"
 expect 0 '' nc orchestrator status crew one
 [ ! -e "$F.lock" ] || fail "stale lock not taken over"
-v2='{"v":2,"updated":1,"route":"orchestrate","reason":"","state":"running","constraints":[],"phases":[{"name":"p","lanes":[{"id":"A","tasks":[{"id":"A1"}]}]}]}'
-echo "$v2" > "$F"
+other='{"v":2,"crew":"team","phases":[{"name":"p","lanes":[{"id":"A","tasks":[{"id":"A1"}]}]}]}'
+echo "$other" > "$F"
 expect 2 'unknown task id "A1"' nc orchestrator status task A1 running
-[ "$(cat "$F")" = "$v2" ] || fail "a refused task call changed the v2 file"
+[ "$(cat "$F")" = "$other" ] || fail "a refused task call changed the file with another version"
 st state running
-is "$(get 's.v + "|" + s.crew + "|" + s.phases.length')" '"3|one|0"' "a v2 file starts over as v3"
-ok "parallel calls keep every update; broken v3 shape: warning, exit 0; a stale lock is taken over; a v2 file is not read"
+is "$(get 's.v + "|" + s.crew + "|" + s.phases.length')" '"3|one|0"' "a file with another version starts over as v3"
+ok "parallel calls keep every update; broken v3 shape: warning, exit 0; a stale lock is taken over; a file with another version is replaced"
 
 echo "all $pass tests passed"

@@ -9,7 +9,7 @@
 #   1. inside a task container: refused (there it is `nc-work claude TASK`, on the host)
 #   2. a subcommand of claude, --version/-v, --help/-h as the first argument: passed on unchanged. --model and
 #      --effort in front of attach, logs, respawn, rm, stop, kill, daemon and self-hosted-runner would turn the
-#      subcommand into the prompt (checked with 2.1.325; rc stays in the list as the task asked)
+#      subcommand into the prompt (checked with 2.1.325; rc stays in the list on purpose)
 #   3. print mode is refused (billed apart from the subscription): -p, --print, --print=…, any group of short options (-cp is
 #      -c -p) before the first --. Some harmless forms are refused too
 #   4. ask `nc models orchestrator` through bin/nc (never bun directly: bunfig.toml, .env and tsconfig.json of
