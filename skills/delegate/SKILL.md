@@ -10,7 +10,7 @@ description: Hand a task to an OpenCode worker in an nc-work task of its own (nc
 ## When
 
 - **Delegate:** tasks that can run in parallel, get by with a cheaper model and have a proof of their own that can be verified (roles `implementer` and `tester`).
-- **Do not delegate:** planning and review (class `frontier`): use the native subagents for those. `nc delegate` refuses roles with `claude-code`. `researcher` is blocked as a worker for good (exit 1): it may neither write nor use the shell and cannot create a `RESULT.md`; for research use the native subagent `researcher` or OpenCode in your own session. Classes in `isolation.classes` (today `cheap`, that is tester) run only in a container: without `nc-work` no worker.
+- **Do not delegate:** planning and review (class `frontier`): use the native subagents for those. `nc delegate` refuses roles with `claude-code`. `researcher` is blocked as a worker for good (exit 1): it may neither write nor use the shell and cannot create a `RESULT.md`; for research use the native subagent `researcher` or OpenCode in your own session. Classes in `isolation.classes` (see `models.yaml`) run only in a container: without `nc-work` no worker.
 - On the Mac there are no workers: no `nc-work` there, isolation only on the server; `nc delegate` refuses.
 - Every task names its proof: how to see that it is done, and which tests must run.
 - The worker starts from the last commit: on the host the checkout must be clean, in the container everything committed. At most 3 tasks run at the same time, otherwise exit 1.
