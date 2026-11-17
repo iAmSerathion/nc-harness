@@ -1,0 +1,10 @@
+# Pinned tools that install.sh installs itself and nc doctor checks. One line per tool and platform:
+#   <tool> <version> <platform> <sha256 of the release archive>
+# OpenCode: standalone CLI binary from the GitHub release (docs: https://opencode.ai/docs, "Download a standalone
+# CLI binary"), https://github.com/anomalyco/opencode/releases/download/v<version>/opencode-<platform>.tar.gz,
+# on macOS .zip instead of .tar.gz (opencode-darwin-arm64.zip). Both hold a single `opencode` at the top.
+# The checksum is the one in the release's SHA256SUMS. nc-infra builds the same binary into nc-work (images/opencode.sha256).
+# Bump: new version + checksums of all lines here, then the same version in nc-infra.
+
+opencode 2.2.7 linux-x64 89a6cee227b54bc011179c528a5e63176032462b1a5e21723b616801cddc2ca7
+opencode 2.2.7 darwin-arm64 811c42be9cad489ea8c411ead49e06f691deee4957ba9a0a56a159a7d6c1abdc

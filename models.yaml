@@ -1,0 +1,86 @@
+# Model classes, role mapping, policies and budgets: the public defaults. Put your own in
+# ~/.nc/overlay/models.yaml; when ~/.nc/overlay exists, nc models reads only that file (docs/ARCHITECTURE.md,
+# "Overlay"). The one place that says which role gets which model. Read by `nc models` (show, resolve, check, orchestrator), by `nc opencode` on the host before it
+# starts OpenCode, by `nc claude`, `nc generate` and `nc doctor`. Checked on every call: a file that is not
+# understood allows nothing (exit 2). Allowed top-level keys are exactly the ones below.
+#
+# claude_code: orchestrator = the Claude session started with `nc claude` (model opus or fable, effort).
+#   subagents = one Claude Code agent file per role listed (model opus, sonnet, haiku, fable or inherit; effort
+#   low, medium, high, xhigh or max; both required). The class of a role does not matter for Claude Code.
+# opencode: subagents = one OpenCode agent file per role listed; the model is the one of the role's class
+#   (runtime: opencode), with an optional `variant` behind # (a-z 0-9 . _ -) and an optional `steps` (whole number
+#   1-500, written as `steps:` into the agent file: caps the agent loop, then it may only answer with text). A role
+#   missing from a block does not exist in that runtime. Claude Code is the only orchestrator. After a change:
+#   `nc generate`.
+# The generated OpenCode agents hold in every folder; `nc models check --host` does not see them. A rule with
+# deny_classes without `isolation: container` therefore does not block them: always add denials together with
+# `isolation: container`.
+#
+# policies: `match` is "**" (exactly once, as the last rule) or "<path>/**" with a path that starts with / or ~/
+# and contains no *. The first matching rule wins; rules below the asked folder add their restrictions.
+# `isolation` of a rule can only be `container`. `require` is a text or a list; the only known value is no-training
+# (anything else: exit 2): the task gets the key of the OpenRouter workspace "clients" (training and publication off,
+# only the allowed models), with or without deny_classes: [free]. Where a rule denies free or has a require,
+# `nc models check --model` allows only the exact models of the classes allowed there (early refusal, a mirror of
+# the guardrail for a clearer message; the hard limit stays at OpenRouter).
+# isolation.classes: workers (nc delegate) of these classes run only in a container; without nc-work nc delegate
+# refuses them. OpenCode on the host and its subagents are not affected.
+# budgets: only per_task_usd (a number > 0). Display only: nc delegate shows cost_usd as OpenCode in the worker
+# reports it and marks over_budget; nothing is stopped. The hard limits are the keys' daily limit at OpenRouter
+# and 20 minutes per task.
+# A class model is a placeholder (TODO…) or an ID of the form openrouter/<author>/<model>.
+# Inside a task container nc-work generates the agents with the policy of the task's project (nc generate --out
+# --path, before every session start). Before every OpenCode start it also asks `nc models --json --path` for the
+# project: where the policy denies free or requires no-training, OpenCode gets only the key of the OpenRouter workspace "clients", whose
+# guardrail lets through nothing but the allowed models (the hard limit); default and title model
+# come from the classes standard and cheap. On the host nothing here is enforced beyond `nc opencode`'s check.
+# Changing the model of standard or cheap: add it to the guardrail of the workspace "clients" at OpenRouter as
+# well; otherwise it fails in client tasks (nothing gets through).
+# A new client project belongs under ~/projects/clients/, or needs its own rule with deny_classes: [free],
+# require: no-training and isolation: container; otherwise its task gets the default key.
+#
+# Check real model IDs with `opencode models` before changing them – do not guess.
+
+allow_headless_claude: false
+
+classes:
+  frontier: { runtime: claude-code }                                  # native subagent in Claude Code
+  standard: { runtime: opencode, model: "openrouter/openai/gpt-6.1-terra" }           # effort as variant, e.g. #high
+  cheap:    { runtime: opencode, model: "openrouter/z-ai/glm-5.3-flash" }             # without a variant it runs on max: use #low
+  free:     { runtime: opencode, model: "openrouter/cohere/north-mini-code:free" }    # no effort variants; 15 requests per minute
+
+roles:
+  planner: frontier
+  reviewer: frontier
+  implementer: standard
+  tester: cheap
+  researcher: free
+
+claude_code:
+  orchestrator: { model: opus, effort: high }        # opus or fable
+  subagents:
+    planner:     { model: opus,   effort: high }
+    reviewer:    { model: opus,   effort: high }
+    implementer: { model: sonnet, effort: medium }
+    tester:      { model: haiku,  effort: medium }
+    researcher:  { model: haiku,  effort: medium }
+
+opencode:
+  subagents:                 # the model comes from the role's class (roles, classes)
+    implementer: { variant: high, steps: 150 }  # steps: also for nc delegate workers; keep it above what a 20-minute
+    tester:      { variant: low, steps: 100 }   # run needs, or the worker cannot commit or write RESULT.md; glm-5.3-flash runs on max without a variant
+    researcher:  {}                  # variant is optional
+
+isolation:                    # workers (nc delegate) of these classes run only in a container
+  classes: [cheap, free]
+
+policies:                     # first matching rule wins
+  - match: "~/projects/clients/**"   # example of a restricted folder: client code
+    deny_classes: [free]
+    require: no-training
+    isolation: container
+  - match: "**"
+    deny_classes: []
+
+budgets:                      # display only (over_budget in nc delegate's result), see above
+  per_task_usd: 1.00

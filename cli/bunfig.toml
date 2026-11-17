@@ -1,0 +1,3 @@
+# Empty on purpose. bin/nc starts Bun with --config=<this file> and --no-env-file, so a bunfig.toml (preload)
+# or .env in the folder nc runs in cannot change what nc answers. nc models gives permissions; nc opencode
+# runs it inside the project folder.

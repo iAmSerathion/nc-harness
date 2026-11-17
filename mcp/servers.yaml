@@ -1,0 +1,16 @@
+# MCP servers, defined once. Empty on purpose: add servers one by one.
+# nc generate writes them on the host only (never into task containers): <OpenCode config dir>/opencode.jsonc and
+# ~/.nc/mcp/claude.json (nc claude adds --mcp-config). Never `opencode mcp add` or `claude mcp add`.
+#
+#   servers:
+#     example:
+#       type: local                     # local | remote
+#       command: ["npx", "-y", "package"] # local: a non-empty list of texts
+#       env: { MODE: "read-only" }      # local, optional: texts only; no ${…}, {env:…}, {file:…} yet
+#       machines: [server, mac]         # required; nc generate writes only the servers of its machine
+#     remote:
+#       type: remote
+#       url: https://example.com/mcp    # Streamable HTTP, without secrets
+#       machines: [server]
+
+servers: {}

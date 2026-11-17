@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# nc – entry point of the nc-harness CLI. Resolves the repo through symlinks and runs cli/nc.ts with Bun.
+set -euo pipefail
+
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  case "$src" in /*) ;; *) src="$dir/$src" ;; esac
+done
+NC_REPO="$(cd -P "$(dirname "$src")/.." && pwd)"
+export NC_REPO
+
+# Without Bun in between, so OpenCode and Claude own the terminal and their signals.
+[ "${1:-}" = opencode ] && { shift; exec "$NC_REPO/cli/opencode.sh" "$@"; }
+[ "${1:-}" = claude ] && { shift; exec "$NC_REPO/cli/claude.sh" "$@"; }
+
+bun_bin="$(command -v bun 2>/dev/null || true)"
+if [ -z "$bun_bin" ]; then
+  for c in "$HOME/.local/share/mise/shims/bun" "$HOME/.bun/bin/bun"; do
+    [ -x "$c" ] && { bun_bin="$c"; break; }
+  done
+fi
+[ -n "$bun_bin" ] || { echo "nc: bun not found (install it with mise)" >&2; exit 127; }
+
+# Bun would read bunfig.toml (preload), .env and tsconfig.json/jsconfig.json (compilerOptions.paths, applied even
+# to cli/nc.ts) from the current folder and above, i.e. from the project nc is asked about. nc models answers
+# with a permission, so none of them may have a say: empty config and tsconfig from the repo, no .env.
+exec "$bun_bin" --no-env-file --config="$NC_REPO/cli/bunfig.toml" --tsconfig-override="$NC_REPO/cli/tsconfig.json" \
+  "$NC_REPO/cli/nc.ts" "$@"

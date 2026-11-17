@@ -1,0 +1,24 @@
+# What install.sh sets up and nc doctor checks. One entry per line.
+#   dir    <target>            directory under $HOME, created if missing
+#   link   <target> <source> [overlay]
+#                              symlink $HOME/<target> -> <repo>/<source>; with "overlay" -> ~/.nc/overlay/<source>
+#                              instead when that file exists (your own version, kept outside this repo)
+#   skills <target> <source>   one symlink per skill: $HOME/<target>/<name> -> <repo>/<source>/<name>
+#                              for every <source>/<name>/SKILL.md; links to removed skills are deleted
+# Existing files at a link target are moved to ~/.nc/backup/<date>/ first.
+# Never link whole directories Claude Code writes into itself (~/.claude/skills, ~/.claude/agents):
+# link single entries inside them instead.
+# OpenCode itself comes from pins.txt, not from here.
+
+dir  sandbox
+dir  notes
+
+link .claude/CLAUDE.md               AGENTS.md overlay
+link .config/opencode/AGENTS.md      AGENTS.md overlay
+link .config/opencode/opencode.json  adapters/opencode/opencode.json
+link .config/opencode/service.json   adapters/opencode/service.json
+link .local/bin/nc                   bin/nc
+
+# Claude Code and OpenCode 2 both read ~/.claude/skills (OpenCode: "global compatibility" source),
+# so one set of links serves both runtimes.
+skills .claude/skills                skills
