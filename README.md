@@ -17,16 +17,17 @@ The harness does not replace either runtime. It writes their configuration, link
 
 ```mermaid
 flowchart LR
-  U["You"] --> O["Claude Code orchestrator, started with nc claude"]
-  O -->|"skill crew"| P["nc orchestrator claude: the procedure"]
-  O --> SA["Claude Code subagents: planner, reviewer, ..."]
+  U["You"] --> O["Claude Code<br/>orchestrator,<br/>started with<br/>nc claude"]
+  O -->|"1"| P["nc orchestrator<br/>claude:<br/>the procedure"]
+  O --> SA["Claude Code<br/>subagents: planner,<br/>reviewer, ..."]
   O --> D["nc delegate"]
-  D -->|"is the model allowed here?"| NM["nc models: policy of the folder"]
-  D --> NW["nc-work: one rootless container per task"]
-  NW --> W["OpenCode worker on an OpenRouter model"]
-  O -->|"nc memory"| MEM["~/.nc/memory: your private memory repo"]
-  O -->|"nc orchestrator status"| SF["status file, read by the Herdr card"]
+  D -->|"2"| NM["nc models:<br/>policy of<br/>the folder"]
+  D --> NW["nc-work: one rootless<br/>container per task,<br/>runs an OpenCode worker<br/>on an OpenRouter model"]
+  O -->|"3"| MEM["~/.nc/memory:<br/>your private<br/>memory repo"]
+  O -->|"4"| SF["status file, read<br/>by the Herdr card"]
 ```
+
+Numbered edges: 1 through the skill `crew`; 2 "is the model allowed here?"; 3 through `nc memory`; 4 through `nc orchestrator status`. In the diagram, the nc-work node merges two parts: `nc-work` starts one rootless container per task, and the OpenCode worker runs on an OpenRouter model inside it.
 
 You talk to one Claude Code session, the orchestrator. Through the skill `crew` it loads its procedure, sizes the task and either does the work itself or hands parts to subagents. Claude Code subagents run inside the session. OpenCode workers run through `nc delegate`, each in an nc-work task of its own, and come back as a git branch. Before a worker starts, `nc models` answers whether its model is allowed in that folder. `nc claude` asks it for the orchestrator's model and effort, and `nc opencode` checks the folder's policy before it starts. What was learned goes into the shared memory, and the orchestrator's progress goes into a status file that a card in [herdr-nc](https://github.com/iAmSerathion/herdr-nc) shows. The full picture: [docs/ARCHITECTURE.md, runtime](docs/ARCHITECTURE.md#2-how-it-works-together-at-runtime).
 
@@ -37,39 +38,46 @@ flowchart LR
   subgraph repo["nc-harness checkout"]
     AG["AGENTS.md"]
     SK["skills/"]
-    RO["roles/"]
-    MY["models.yaml"]
-    MS["mcp/servers.yaml"]
     AD["adapters/opencode/"]
     PI["pins.txt"]
     BIN["bin/nc"]
   end
-  OV["~/.nc/overlay: your private overlay repo"]
+  OV["~/.nc/overlay: your<br/>private overlay repo"]
   AG --> CM["~/.claude/CLAUDE.md"]
-  AG --> OAG["~/.config/opencode/AGENTS.md"]
+  AG --> OAG["~/.config/opencode/<br/>AGENTS.md"]
   OV -.->|"its AGENTS.md wins"| CM
   OV -.->|"its AGENTS.md wins"| OAG
   SK --> CS["~/.claude/skills/NAME"]
-  AD --> OJ["~/.config/opencode/opencode.json and service.json"]
+  AD --> OJ["~/.config/opencode/<br/>opencode.json and<br/>service.json"]
   PI --> OB["~/.local/bin/opencode"]
   BIN --> NB["~/.local/bin/nc"]
-  RO --> GEN["nc generate"]
-  MY --> GEN
-  OV -.->|"its models.yaml replaces the repo file"| GEN
-  MS --> GEN
-  GEN --> CA["~/.claude/agents/ROLE.md"]
-  GEN --> OA["~/.config/opencode/agents/ROLE.md"]
-  GEN --> MC["~/.nc/mcp/claude.json"]
-  GEN --> OM["~/.config/opencode/opencode.jsonc"]
 ```
 
-`install.sh` creates the direct links from [manifest.txt](manifest.txt) and installs OpenCode from [pins.txt](pins.txt); `nc generate` writes the files below it:
+`install.sh` creates the direct links from [manifest.txt](manifest.txt) and installs OpenCode from [pins.txt](pins.txt):
 
 - The rules (`AGENTS.md`) go to `~/.claude/CLAUDE.md` and `~/.config/opencode/AGENTS.md`. If your overlay has its own `AGENTS.md`, both links point there instead.
 - Every folder under `skills/` with a `SKILL.md` gets its own link in `~/.claude/skills/`. Claude Code and OpenCode (the version pinned in `pins.txt`) both read that folder, so one set of links serves both runtimes.
 - `adapters/opencode/` holds the fixed OpenCode configuration: only the `openrouter` provider is allowed, sharing and self-update are off, and `service.json` turns off the shared background service that would otherwise keep the key ([adapters/opencode/README.md](adapters/opencode/README.md)).
 - OpenCode itself is the version pinned in `pins.txt`, downloaded, checked against its SHA-256 and linked to `~/.local/bin/opencode`.
 - `bin/nc` is linked to `~/.local/bin/nc`. It runs `cli/nc.ts` with Bun, except `nc claude` and `nc opencode`, which start the runtimes directly from shell scripts.
+
+```mermaid
+flowchart LR
+  subgraph repo["nc-harness checkout"]
+    RO["roles/"]
+    MY["models.yaml"]
+    MS["mcp/servers.yaml"]
+  end
+  OV["~/.nc/overlay: your<br/>private overlay repo"]
+  RO --> GEN["nc generate"]
+  MY --> GEN
+  OV -.->|"its models.yaml<br/>replaces the<br/>repo file"| GEN
+  MS --> GEN
+  GEN --> CA["~/.claude/agents/<br/>ROLE.md"]
+  GEN --> OA["~/.config/opencode/<br/>agents/ROLE.md"]
+  GEN --> MC["~/.nc/mcp/claude.json"]
+  GEN --> OM["~/.config/opencode/<br/>opencode.jsonc"]
+```
 
 Then `install.sh` runs `nc generate`, which turns `roles/` and `models.yaml` into one agent file per role and runtime, and `mcp/servers.yaml` into MCP configuration for both runtimes. Generated agent files carry a fixed second line (`opencode.jsonc` its first); a foreign file of the same name is backed up before it is replaced. `~/.nc/mcp` belongs to the harness and is overwritten.
 
