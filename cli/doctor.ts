@@ -2,7 +2,7 @@ import { accessSync, constants, existsSync, lstatSync, readFileSync, readlinkSyn
 import { join } from "node:path";
 import { delegateCheckIsolated } from "./delegate.ts";
 import { agentChecks, agentChecksIsolated, claudeEnvChecks, mcpChecks } from "./generate.ts";
-import { HooksError, hookState, parseSettings } from "./hooks.ts";
+import { HooksError, hookState, parseSettings, readSettings } from "./hooks.ts";
 import { expandSkills, readManifest, staleSkillLinks } from "./manifest.ts";
 import { memoryChecksDirect, memoryChecksIsolated } from "./memory.ts";
 import { commit, machine, mode, ncHome, opencodeConfigDir } from "./mode.ts";
@@ -190,8 +190,7 @@ function overlayCheck(repo: string, home: string, tilde: (p: string) => string):
 function claudeHookCheck(home: string): Check {
   const name = "Claude Code compact hook";
   try {
-    const file = join(home, ".claude", "settings.json");
-    const state = hookState(parseSettings(existsSync(file) ? readFileSync(file, "utf8") : null));
+    const state = hookState(parseSettings(readSettings(home).text));
     return state === "ok"
       ? { name, status: "ok", detail: "SessionStart compact runs nc orchestrator status context" }
       : { name, status: "warn", detail: `${state} – nc hooks (or ./install.sh)` };

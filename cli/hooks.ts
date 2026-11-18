@@ -65,6 +65,14 @@ export function withHook(s: Record<string, any>): Record<string, any> {
   return { ...s, hooks: { ...(s.hooks ?? {}), SessionStart: [...start, COMPACT_HOOK] } };
 }
 
+/** The real settings file (a link followed) and its text (null when missing); a dangling link is a HooksError. */
+export function readSettings(home: string): { file: string; text: string | null } {
+  const link = join(home, ".claude", "settings.json");
+  if (!lstatSync(link, { throwIfNoEntry: false })?.isSymbolicLink()) return { file: link, text: existsSync(link) ? readFileSync(link, "utf8") : null };
+  if (!existsSync(link)) throw new HooksError("is a link to a missing file – create the target or remove the link, nothing written");
+  return { file: realpathSync(link), text: readFileSync(link, "utf8") };
+}
+
 export function hooks(home: string, args: string[]): number {
   const check = args.includes("--check");
   const bad = args.filter((a) => a !== "--check");
@@ -72,14 +80,8 @@ export function hooks(home: string, args: string[]): number {
     process.stderr.write(`nc hooks: unknown argument ${JSON.stringify(bad[0])}\nusage: nc hooks [--check]\n`);
     return 2;
   }
-  const link = join(home, ".claude", "settings.json");
-  let file = link;
   try {
-    if (lstatSync(link, { throwIfNoEntry: false })?.isSymbolicLink()) {
-      if (!existsSync(link)) throw new HooksError("is a link to a missing file – create the target or remove the link, nothing written");
-      file = realpathSync(link);
-    }
-    const text = existsSync(file) ? readFileSync(file, "utf8") : null;
+    const { file, text } = readSettings(home);
     const s = parseSettings(text);
     const state = hookState(s);
     if (state === "ok") {
