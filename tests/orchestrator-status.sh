@@ -228,4 +228,128 @@ st state running
 is "$(get 's.v + "|" + s.crew + "|" + s.phases.length')" '"3|one|0"' "a file with another version starts over as v3"
 ok "parallel calls keep every update; broken v3 shape: warning, exit 0; a stale lock is taken over; a file with another version is replaced"
 
+# 9. status context (the SessionStart hook, matcher compact): the open run as text; nothing when there is no open run
+unset CLAUDE_CODE_SESSION_ID CLAUDE_PID
+CTX="ctx-sess-0001"; OTHER="ctx-other-0002"; DECOY="ctx-decoy-0003"; BAD="ctx-bad-0004"; BIG="ctx-big-0006"
+ctx() {  # ctx <stdin text>: nc orchestrator status context with that stdin; output in $T/ctx, exit 0, nothing on stderr
+  printf '%s' "$1" > "$T/ctxin"
+  STDIN="$T/ctxin" expect 0 '' nc orchestrator status context
+  [ ! -s "$T/err" ] || fail "context wrote to stderr: $(cat "$T/err")"
+  cp "$T/out" "$T/ctx"
+}
+CRUMB="Crew: one – fix the lint. State: running."
+
+rm -f "$DIR/$CTX.json"
+ctx "{\"session_id\":\"$CTX\",\"hook_event_name\":\"SessionStart\",\"source\":\"compact\"}"
+[ ! -s "$T/ctx" ] || fail "no file: output $(cat "$T/ctx")"
+
+CLAUDE_CODE_SESSION_ID="$CTX" expect 0 '' nc orchestrator status crew one fix the lint
+ctx "{\"session_id\":\"$CTX\"}"
+grep -qxF "$CRUMB" "$T/ctx" || fail "crew line: $(cat "$T/ctx")"
+grep -qF "$CTX.json" "$T/ctx" || fail "the header names no file"
+! grep -q '^Phase' "$T/ctx" || fail "a crew with no plan prints phases"
+ok "crew with no plan: the header, the crew, the reason and the state; no phases"
+
+ctx '{}'   # no session id in the hook input and no environment id: nothing, not even this session's file
+[ ! -s "$T/ctx" ] || fail "no session id printed a run"
+CLAUDE_CODE_SESSION_ID="$CTX" ctx '{"hook_event_name":"SessionStart"}'   # no session_id in the input: the environment's id
+grep -qxF "$CRUMB" "$T/ctx" || fail "environment fallback: $(cat "$T/ctx")"
+CLAUDE_CODE_SESSION_ID="$CTX" ctx '{"session_id":5}'   # not a string: the environment's id
+grep -qxF "$CRUMB" "$T/ctx" || fail "a non-string session_id: $(cat "$T/ctx")"
+ok "session id: from the hook input, else CLAUDE_CODE_SESSION_ID; none at all prints nothing"
+
+# a traversal id in the input is ignored: the decoy sits where ../x.json would point
+CLAUDE_CODE_SESSION_ID="$DECOY" expect 0 '' nc orchestrator status crew pair decoy run
+cp "$DIR/$DECOY.json" "$HOME/.claude/x.json"
+ctx '{"session_id":"../x"}'
+[ ! -s "$T/ctx" ] || fail "an invalid id in the input read a file: $(cat "$T/ctx")"
+CLAUDE_CODE_SESSION_ID="$CTX" ctx '{"session_id":"../x"}'
+grep -qxF "$CRUMB" "$T/ctx" && ! grep -q decoy "$T/ctx" || fail "an invalid id in the input did not fall back to the environment: $(cat "$T/ctx")"
+rm -f "$HOME/.claude/x.json"
+ok "invalid id in the input (../x) is ignored: nothing read outside the folder, the environment's id is used"
+
+# the id in the input wins over the environment
+CLAUDE_CODE_SESSION_ID="$OTHER" expect 0 '' nc orchestrator status crew pair other run
+ctx "{\"session_id\":\"$CTX\"}"
+grep -qxF "$CRUMB" "$T/ctx" && ! grep -q 'other run' "$T/ctx" || fail "the environment's id won: $(cat "$T/ctx")"
+ok "the session_id in the hook input wins over CLAUDE_CODE_SESSION_ID"
+
+# CLAUDE_PID's session file when there is no environment id
+unset CLAUDE_CODE_SESSION_ID
+echo "{\"pid\":4343,\"sessionId\":\"$CTX\"}" > "$HOME/.claude/sessions/4343.json"
+CLAUDE_PID=4343 ctx '{}'
+grep -qxF "$CRUMB" "$T/ctx" || fail "CLAUDE_PID fallback: $(cat "$T/ctx")"
+ok "session id from CLAUDE_PID's session file when the input and the environment have none"
+
+# garbage on stdin: exit 0, the environment's id is still used; binary garbage too
+CLAUDE_CODE_SESSION_ID="$CTX" ctx 'not json {{{'
+grep -qxF "$CRUMB" "$T/ctx" || fail "garbage stdin: no fallback: $(cat "$T/ctx")"
+head -c 512 /dev/urandom > "$T/ctxin"
+CLAUDE_CODE_SESSION_ID="$CTX" STDIN="$T/ctxin" expect 0 '' nc orchestrator status context
+[ ! -s "$T/err" ] || fail "binary stdin wrote to stderr: $(cat "$T/err")"
+ok "garbage and binary stdin: exit 0, nothing on stderr, the environment's id is used"
+
+# no open run: state done or error prints nothing (exit 0); closing still is an open run
+CLAUDE_CODE_SESSION_ID="$CTX" expect 0 '' nc orchestrator status state done
+ctx "{\"session_id\":\"$CTX\"}"
+[ ! -s "$T/ctx" ] || fail "state done printed: $(cat "$T/ctx")"
+CLAUDE_CODE_SESSION_ID="$CTX" expect 0 '' nc orchestrator status state error
+ctx "{\"session_id\":\"$CTX\"}"
+[ ! -s "$T/ctx" ] || fail "state error printed: $(cat "$T/ctx")"
+CLAUDE_CODE_SESSION_ID="$CTX" expect 0 '' nc orchestrator status state closing
+ctx "{\"session_id\":\"$CTX\"}"
+grep -qF "State: closing." "$T/ctx" || fail "state closing not printed: $(cat "$T/ctx")"
+ok "state done and error: nothing, exit 0; closing is still printed"
+
+# a team plan with task results: the musts, phase, lanes and every recorded field of the tasks
+cat > "$T/ctxplan" <<'EOF'
+Musts:
+  M1 no new dependency – proof: git diff --stat is empty
+Phase 1: Interface
+  Lane A:
+    A1 write the interface – role: implementer – files: cli/a.ts – musts: M1 – proof: bun test
+  Lane B:
+    B1 write the tests – role: tester – after: A1
+EOF
+CLAUDE_CODE_SESSION_ID="$CTX" STDIN="$T/ctxplan" expect 0 '' nc orchestrator status plan
+CLAUDE_CODE_SESSION_ID="$CTX" expect 0 '' nc orchestrator status state running
+CLAUDE_CODE_SESSION_ID="$CTX" expect 0 '' nc orchestrator status task A1 pass branch=wt-a1 M1=kept bun test 12 ok
+CLAUDE_CODE_SESSION_ID="$CTX" expect 0 '' nc orchestrator status task B1 running delegate=d-7
+ctx "{\"session_id\":\"$CTX\"}"
+for want in \
+  "Crew: team" \
+  "State: running." \
+  "Musts:" \
+  "  M1 no new dependency – proof: git diff --stat is empty" \
+  "Phase: Interface" \
+  "  Lane A:" \
+  "    A1 write the interface – status: pass – role: implementer – files: cli/a.ts – musts: M1 – proof: bun test – branch: wt-a1 – answers: M1=kept – evidence: bun test 12 ok" \
+  "  Lane B:" \
+  "    B1 write the tests – status: running – role: tester – after: A1 – delegate: d-7"; do
+  grep -qF -- "$want" "$T/ctx" || fail "line missing: '$want' in: $(cat "$T/ctx")"
+done
+ok "team plan with results: musts, phase, lanes, task status, role, files, proof, branch, answers, evidence, delegate, after"
+
+# hand-edited file with wrong types: exit 0, no crash, what is readable is printed
+printf '%s' '{"v":3,"updated":"x","crew":["team"],"reason":{"a":1},"state":"running","musts":"M1","phases":[null,{"name":5,"lanes":"x"},{"name":"P","lanes":[{"id":null,"tasks":[null,{"id":"A1","title":7,"status":"pending","files":"a.ts","after":{},"musts":[1,"M1"],"redos":"2","answers":[1,2],"evidence":["x"],"proof":{},"branch":[],"delegate":5,"review":null}]}]}]}' > "$DIR/$BAD.json"
+ctx "{\"session_id\":\"$BAD\"}"
+grep -q '^    A1 7 – status: pending' "$T/ctx" || fail "the readable task line is missing: $(cat "$T/ctx")"
+grep -q '^Phase: P$' "$T/ctx" || fail "the readable phase is missing: $(cat "$T/ctx")"
+ok "hand-edited file with wrong types: exit 0, nothing on stderr, the readable parts printed"
+
+# huge file: at most 8000 characters, cut at a line end, with a note
+bun -e '
+  const task = (l, i) => ({ id: l + i, title: "t".repeat(60), role: "r".repeat(20), status: "running", files: Array(8).fill("f".repeat(80)),
+    proof: "p".repeat(80), after: ["A1"], musts: ["M1"], redos: 1, branch: "b".repeat(60), delegate: "d".repeat(40), review: "v".repeat(20),
+    answers: { M1: "kept" }, evidence: "e".repeat(100) });
+  const lanes = () => "ABCDEF".split("").map((l) => ({ id: l, tasks: Array.from({ length: 40 }, (_, i) => task(l, i + 1)) }));
+  const phases = Array.from({ length: 8 }, (_, p) => ({ name: "P" + p, lanes: lanes() }));
+  require("fs").writeFileSync(process.argv[1], JSON.stringify({ v: 3, updated: 1, crew: "team", reason: "", state: "running", musts: [], phases }));
+' "$DIR/$BIG.json"
+ctx "{\"session_id\":\"$BIG\"}"
+[ "$(bun -e 'console.log(require("fs").readFileSync(process.argv[1], "utf8").length)' "$T/ctx")" -le 8000 ] || fail "the output is over 8000 characters"
+tail -n 1 "$T/ctx" | grep -q '^… (cut' || fail "no cut note at the end: $(tail -n 1 "$T/ctx")"
+grep -q '^nc orchestrator: this session' "$T/ctx" || fail "the header is missing after the cut"
+ok "huge file: at most 8000 characters, cut at a line end with a note, the header kept"
+
 echo "all $pass tests passed"

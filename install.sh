@@ -232,9 +232,10 @@ if [ -n "${NC_HARNESS_VERSION:-}" ]; then
   say skipped "in a container"
 elif [ "$DRY_RUN" = 1 ]; then
   rc=0; BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 "$REPO/bin/nc" hooks --check || rc=$?
-  [ "$rc" -le 1 ] || die "nc hooks --check: exit $rc"
+  [ "$rc" -le 1 ] || say failed "nc hooks --check: exit $rc – the real run would leave settings.json as it is"
 else
-  "$REPO/bin/nc" hooks || die "nc hooks failed – ~/.claude/settings.json is left as it was"
+  # A settings.json nc hooks cannot read stops nothing else: only the restore after a compaction is missing.
+  "$REPO/bin/nc" hooks || say failed "nc hooks – ~/.claude/settings.json left as it was (see above, nc doctor warns)"
 fi
 
 # --- 4. shared memory: clone NC_MEMORY_REMOTE to ~/.nc/memory, or fast-forward it ------------------------------
