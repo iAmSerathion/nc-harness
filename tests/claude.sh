@@ -186,4 +186,40 @@ grep -q "^claude: .*\[hello\]" <<<"$out" && ! grep -q "mcp-config" <<<"$out" || 
 rm "$HOME/.nc/mcp/claude.json"
 ok "--mcp-config=~/.nc/mcp/claude.json (one argument with =) only on the session path and only when the file exists; subcommands and --version unchanged"
 
+# 9. with the MCP file, the NC_MCP_* lines of secrets.env that it references are exported, nothing else; problems warn,
+#    claude still starts
+cp "$T/fake/claude" "$T/fake-args"
+cat > "$T/fake/claude" <<'EOF2'
+#!/usr/bin/env bash
+env | grep -E '^(NC_MCP_|OPENROUTER|OTHER)' | sort | tr '\n' ' '; printf '\n'
+EOF2
+S="$T/secrets.env"; export NC_SECRETS="$S"
+REFS='{"mcpServers":{"a":{"type":"http","url":"http://localhost:1/mcp","headers":{"Authorization":"Bearer ${NC_MCP_A}","X":"${NC_MCP_B}${NC_MCP_C}${NC_MCP_D}${NC_MCP_BAD}${NC_MCP_EMPTY}${NC_MCP_GONE}"}}}}'
+printf '%s\n' 'OPENROUTER_API_KEY=sk-or-x' 'OTHER=1' 'NC_MCP_A=aff_mcp_v1.abc' '  export NC_MCP_B = "q.r"' "NC_MCP_C='s'" \
+  $'NC_MCP_D=crlf\r' 'NC_MCP_UNUSED=u' 'nc_mcp_low=x' 'NC_MCP_BAD=a b' 'NC_MCP_EMPTY=' '# NC_MCP_GONE=x' > "$S"; chmod 600 "$S"
+out="$(nc claude 2>"$T/err")"; is "$out" "" "no MCP file: nothing exported"
+[ ! -s "$T/err" ] || fail "no MCP file: stderr: $(cat "$T/err")"
+mkdir -p "$HOME/.nc/mcp" && echo '{"mcpServers":{}}' > "$HOME/.nc/mcp/claude.json"
+out="$(nc claude 2>"$T/err")"; is "$out" "" "MCP file without references: nothing exported"
+[ ! -s "$T/err" ] || fail "MCP file without references: stderr: $(cat "$T/err")"
+printf '%s\n' "$REFS" > "$HOME/.nc/mcp/claude.json"
+out="$(nc claude 2>"$T/err")"
+is "$out" "NC_MCP_A=aff_mcp_v1.abc NC_MCP_C=s NC_MCP_D=crlf " "exported: only referenced, valid lines"
+for w in "NC_MCP_BAD in $S is empty or invalid" "NC_MCP_EMPTY in $S is empty or invalid" "NC_MCP_GONE is referenced" "NC_MCP_B is referenced"; do
+  grep -q "$w" "$T/err" || fail "warning '$w' missing: $(cat "$T/err")"
+done
+grep -qE "a b|aff_mcp|UNUSED" "$T/err" && fail "a value or an unreferenced name was printed: $(cat "$T/err")"
+printf '%s\n' $'\xef\xbb\xbfNC_MCP_A=x' 'export NC_MCP_C=y' > "$S"
+is "$(nc claude 2>/dev/null)" "NC_MCP_A=x NC_MCP_C=y " "BOM and export prefix"
+chmod 644 "$S"
+out="$(nc claude 2>"$T/err")"; is "$out" "" "loose permissions: nothing exported"
+grep -q "has permissions 644, expected 600" "$T/err" || fail "permission warning: $(cat "$T/err")"
+chmod 600 "$S" && mv "$S" "$S.real" && ln -s "$S.real" "$S"
+out="$(nc claude 2>"$T/err")"; is "$out" "" "secrets.env as a link: nothing exported"
+grep -q "is a link" "$T/err" || fail "link warning: $(cat "$T/err")"
+rm "$S" "$S.real"; out="$(nc claude 2>"$T/err")"; is "$out" "" "no secrets.env"
+[ ! -s "$T/err" ] || fail "no secrets.env: stderr: $(cat "$T/err")"
+unset NC_SECRETS; rm "$HOME/.nc/mcp/claude.json"; mv "$T/fake-args" "$T/fake/claude"
+ok "NC_MCP_* from secrets.env only with the MCP file and only what it references; OPENROUTER_API_KEY, other and unreferenced lines stay out; CRLF and BOM read; bad values, missing names, a link and loose permissions warn without printing a value; claude still starts"
+
 echo "$pass tests passed"

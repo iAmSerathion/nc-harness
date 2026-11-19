@@ -276,6 +276,7 @@ else
     cat > "$SECRETS" <<'EOF'
 # nc-harness – keys. Permissions 600. Never commit, never export into the shell.
 # Read only by `nc opencode` (host) and `nc-work opencode` (container), each for that one process only.
+# Exception: lines NC_MCP_NAME=… are MCP tokens; `nc claude` exports only those, for ${NC_MCP_NAME} in mcp/servers.yaml.
 OPENROUTER_API_KEY=
 # Key of the OpenRouter workspace `clients` (guardrail with the allowed models); nc-work gives it to tasks of
 # projects whose policy in models.yaml denies `free`, instead of OPENROUTER_API_KEY.

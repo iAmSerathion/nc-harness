@@ -10,7 +10,9 @@
 #       machines: [server, mac]         # required; nc generate writes only the servers of its machine
 #     remote:
 #       type: remote
-#       url: https://example.com/mcp    # Streamable HTTP, without secrets
+#       url: https://example.com/mcp    # Streamable HTTP; http only for localhost, 127.0.0.1, [::1]
+#       headers: { Authorization: "Bearer ${NC_MCP_EXAMPLE}" }  # optional; the value goes into secrets.env as
+#                                       # NC_MCP_EXAMPLE=…, nc claude exports it (Claude Code only, not OpenCode)
 #       machines: [server]
 
 servers: {}

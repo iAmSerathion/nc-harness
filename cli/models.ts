@@ -81,7 +81,7 @@ function validMatch(match: unknown): match is string {
 }
 
 /** HOME, which must be absolute: a relative one would read ~ from the current folder, which a project controls. */
-function absHome(): string {
+export function absHome(): string {
   const home = process.env.HOME ?? "";
   if (!isAbsolute(home)) throw new ModelsError(`HOME is ${home ? "not an absolute path" : "empty"} – without HOME ~ in models.yaml cannot be filled in`);
   return home;

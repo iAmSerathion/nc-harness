@@ -189,6 +189,17 @@ Notes are at most 500 characters. Notes with obvious secrets or invisible charac
 
 MCP servers are defined once in [mcp/servers.yaml](mcp/servers.yaml) (empty by default). `nc generate` writes them on the host only, to `<OpenCode config dir>/opencode.jsonc` and `~/.nc/mcp/claude.json` (which `nc claude` passes with `--mcp-config=`). Every entry names the `machines` it runs on. Task containers get no MCP.
 
+A remote server may carry `headers` (a token, for example). The secret never goes into the YAML: a header value names it as `${NC_MCP_NAME}`, and the value goes into `secrets.env` as `NC_MCP_NAME=…`. `nc claude` exports only the `NC_MCP_*` lines of `secrets.env`, and Claude Code fills them in. OpenCode does not get servers with headers yet. `http` is allowed only for `localhost`, `127.0.0.1` and `[::1]` (an SSH tunnel), anything else needs `https`.
+
+```yaml
+servers:
+  affine:
+    type: remote
+    url: http://localhost:3010/api/workspaces/<workspace-id>/mcp
+    headers: { Authorization: "Bearer ${NC_MCP_AFFINE}" }
+    machines: [mac]
+```
+
 The skills are `crew` (Claude Code only), `delegate`, `memory` and `nc-harness-check`, a small check that the shared skills reach a runtime.
 
 ## Install

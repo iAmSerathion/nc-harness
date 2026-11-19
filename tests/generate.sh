@@ -551,8 +551,23 @@ printf 'servers: [\n' > "$SV";                                                  
 printf '%s\nextra: 1\n' "$GOOD" > "$SV";                                              mbroken 'unknown key "extra" at the top level'
 r "$GOOD" "machines: [server]" "machines: [server]
     cwd: /tmp" > "$SV";                                                               mbroken 'servers.k-local has an unknown key "cwd"'
-r "$GOOD" '"--flag"' '"${X}"' > "$SV";                                                mbroken 'secrets in MCP not supported yet'
-r "$GOOD" "url: https://mcp.example.com/v2" "url: https://mcp.example.com/{env:X}" > "$SV"; mbroken "secrets in MCP not supported yet"
+r "$GOOD" '"--flag"' '"${X}"' > "$SV";                                                mbroken 'secrets in MCP only as'
+r "$GOOD" '"--flag"' '"${NC_MCP_A}"' > "$SV";                                         mbroken 'secrets in MCP only as'
+r "$GOOD" "url: https://mcp.example.com/v2" "url: https://mcp.example.com/{env:X}" > "$SV"; mbroken "secrets in MCP only as"
+r "$GOOD" "url: https://mcp.example.com/v2" "url: https://mcp.example.com/\${NC_MCP_A}" > "$SV"; mbroken "secrets in MCP only as"
+H="url: https://mcp.example.com/v2
+    headers:"
+r "$GOOD" "url: https://mcp.example.com/v2" "$H { Authorization: \"Bearer \${X}\" }" > "$SV";                  mbroken 'only plain \${NC_MCP_NAME} references'
+r "$GOOD" "url: https://mcp.example.com/v2" "$H { Authorization: \"Bearer \${OPENROUTER_API_KEY}\" }" > "$SV"; mbroken 'only plain \${NC_MCP_NAME} references'
+r "$GOOD" "url: https://mcp.example.com/v2" "$H { Authorization: \"{env:NC_MCP_A}\" }" > "$SV";                 mbroken 'only plain \${NC_MCP_NAME} references'
+r "$GOOD" "url: https://mcp.example.com/v2" "$H { Authorization: \"\${NC_MCP_a}\" }" > "$SV";                   mbroken 'only plain \${NC_MCP_NAME} references'
+r "$GOOD" "url: https://mcp.example.com/v2" "$H { Authorization: 1 }" > "$SV";                                 mbroken "headers.Authorization is not a YAML text on one line"
+r "$GOOD" "url: https://mcp.example.com/v2" "$H { Authorization: \"\${NC_MCP_A:-\${OPENROUTER_API_KEY}}\" }" > "$SV"; mbroken 'only plain \${NC_MCP_NAME} references'
+r "$GOOD" "url: https://mcp.example.com/v2" "$H { Authorization: \"Bearer sk-secret \${X}\" }" > "$SV"
+expect 2 "value not printed" nc generate; grep -q "sk-secret" "$T/out" "$T/err" && fail "a header value was printed"
+r "$GOOD" "url: https://mcp.example.com/v2" "$H {}" > "$SV";                                                   mbroken "headers is not a non-empty mapping"
+r "$GOOD" "url: https://mcp.example.com/v2" "$H { \"Auth orization\": \"x\" }" > "$SV";                         mbroken '"Auth orization" is not a header name'
+r "$GOOD" "url: https://mcp.example.com/v2" "url: http://localhost.example.com/v2" > "$SV";                    mbroken "expected an https address"
 r "$GOOD" 'MODE: "read"' 'MODE: 1' > "$SV";                                           mbroken "servers.k-local.env.MODE is 1, expected a YAML text"
 r "$GOOD" 'MODE: "read"' 'OPENROUTER_API_KEY_X: "a"' > "$SV";                         mbroken "OPENROUTER_API_KEY_X – never put the OpenRouter key into env"
 r "$GOOD" "url: https://mcp.example.com/v2" "url: http://mcp.example.com/v2" > "$SV"; mbroken "expected an https address"
@@ -571,7 +586,39 @@ if [ "$(id -u)" != 0 ]; then                           # root reads anyway
   expect 2 "~/.nc/mcp/claude.json not readable (EACCES)" nc generate
   chmod 644 "$MC"
 fi
-ok "broken YAML, unknown keys, \${X} in command, {env:X} in url, a value that is no text, OPENROUTER_API_KEY*, http, unknown machine, bad name: exit 2, nothing written; errors in servers.yaml show on the MCP line only"
+ok "broken YAML, unknown keys, \${X} or \${NC_MCP_A} outside a header value, {env:X} in url, a value that is no text, OPENROUTER_API_KEY*, http off localhost, bad headers (other references, {env:…}, no text, empty, bad name), unknown machine, bad name: exit 2, nothing written; errors in servers.yaml show on the MCP line only"
+
+# headers with \${NC_MCP_…} and http on localhost: claude.json keeps the reference (Claude Code substitutes it), OpenCode leaves the server out
+printf '%s\n' "$GOOD" '  k-tunnel:' '    type: remote' '    url: http://localhost:3010/api/mcp' \
+  '    headers: { Authorization: "Bearer ${NC_MCP_K_TUNNEL}", X-Ws: "a${NC_MCP_A}b" }' '    machines: [server, mac]' > "$SV"
+expect 0 "replaced   ~/.nc/mcp/claude.json" nc generate
+is "$(jc "$MC")" '{"mcpServers":{"k-local":{"command":"python3","args":["/srv/mcp-test.py","--flag"],"env":{"MODE":"read"}},"k-remote":{"type":"http","url":"https://mcp.example.com/v2"},"k-tunnel":{"type":"http","url":"http://localhost:3010/api/mcp","headers":{"Authorization":"Bearer ${NC_MCP_K_TUNNEL}","X-Ws":"a${NC_MCP_A}b"}}}}' "claude.json with headers"
+is "$(jc "$MO" skip)" '{"mcp":{"servers":{"k-local":{"type":"local","command":["python3","/srv/mcp-test.py","--flag"],"environment":{"MODE":"read"}},"k-remote":{"type":"remote","url":"https://mcp.example.com/v2","oauth":false}}}}' "opencode.jsonc without the server with headers"
+expect 0 "MCP up to date: 3 server(s)" nc generate
+r "$(cat "$SV")" "http://localhost:3010" "http://127.0.0.1:3010" > "$SV.new" && mv "$SV.new" "$SV"; expect 0 "replaced   ~/.nc/mcp/claude.json" nc generate
+r "$(cat "$SV")" "http://127.0.0.1:3010" "http://[::1]:3010" > "$SV.new" && mv "$SV.new" "$SV";     expect 0 "replaced   ~/.nc/mcp/claude.json" nc generate
+printf '%s\n' "$GOOD" > "$SV" && expect 0 "replaced   ~/.nc/mcp/claude.json" nc generate
+ok "a remote server with \${NC_MCP_…} headers on http://localhost, 127.0.0.1 and [::1]: in claude.json with the references unchanged, not in opencode.jsonc"
+
+# the overlay's mcp/servers.yaml wins over the repo's; broken there: exit 2 naming the overlay file
+OV="$HOME/.nc/overlay"; mkdir -p "$OV/mcp" && cp "$RC/models.yaml" "$OV/models.yaml"
+expect 0 "MCP up to date: 2 server(s)" nc generate                                  # overlay without mcp/servers.yaml: the repo's
+printf '%s\n' 'servers:' '  k-private:' '    type: remote' '    url: https://private.example.com/mcp' '    machines: [server]' > "$OV/mcp/servers.yaml"
+expect 0 "replaced   ~/.nc/mcp/claude.json" nc generate
+is "$(jc "$MC")" '{"mcpServers":{"k-private":{"type":"http","url":"https://private.example.com/mcp"}}}' "claude.json from the overlay"
+obroken() {  # like mbroken, but the overlay itself lies under ~/.nc: compare only the MCP files
+  local b; b="$(cat "$MC" "$MO")"
+  expect 2 "$1" nc generate; expect 2 "$1" nc generate --check
+  [ "$(cat "$MC" "$MO")" = "$b" ] || fail "MCP files changed although nc generate refused ($1)"
+}
+printf 'servers: [\n' > "$OV/mcp/servers.yaml";                                     obroken "~/.nc/overlay/mcp/servers.yaml: not valid YAML"
+rm "$OV/mcp/servers.yaml" && mkdir "$OV/mcp/servers.yaml";                          obroken "servers.yaml is not a regular file"
+rmdir "$OV/mcp/servers.yaml" && ln -s "$T/nowhere" "$OV/mcp/servers.yaml";          obroken "a dangling link?"
+rm "$OV/mcp/servers.yaml" && rmdir "$OV/mcp" && ln -s "$T/nowhere" "$OV/mcp";        obroken "a dangling link?"
+rm "$OV/mcp"
+rm -rf "$OV" && expect 0 "replaced   ~/.nc/mcp/claude.json" nc generate
+is "$(jc "$MC" | grep -c k-remote)" "1" "back to the repo's servers.yaml"
+ok "~/.nc/overlay/mcp/servers.yaml wins over the repo's (an overlay without it uses the repo's); broken, not a file or a dangling link (file or folder) there: exit 2 with the overlay path, nothing written"
 
 mkdir -p "$T/mcp-real" && mv "$HOME/.nc/mcp" "$T/mcp-old" && ln -s "$T/mcp-real" "$HOME/.nc/mcp"
 expect 2 "~/.nc/mcp is a link" nc generate
