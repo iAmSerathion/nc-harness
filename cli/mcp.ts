@@ -1,5 +1,6 @@
 /**
- * mcp/servers.yaml – MCP servers, defined once. Read and checked here, written by nc generate on the
+ * mcp/servers.yaml – MCP servers, defined once. ~/.nc/overlay/mcp/servers.yaml wins when it exists (private servers,
+ * workspace ids and the like stay out of the public repo); otherwise <repo>/mcp/servers.yaml. Read and checked here, written by nc generate on the
  * host only (never with --out: no MCP in task containers).
  *
  *   servers:
@@ -7,41 +8,62 @@
  *       type: local | remote
  *       command: [prog, arg, …]    # local only: a non-empty list of texts
  *       env: { NAME: "text" }      # local only, optional: values are YAML texts
- *       url: https://…             # remote only: Streamable HTTP, without secrets
+ *       url: https://…             # remote only: Streamable HTTP; http only for localhost, 127.0.0.1 and [::1]
+ *       headers: { Name: "text" }  # remote only, optional; values may hold ${NC_MCP_…} references, nothing else secret
  *       machines: [server, mac]    # required; only servers that name machine() are used
  *
- * Every deviation is exit 2. Secrets are not supported yet: `${`, `{env:` and `{file:` in any text of an entry are
- * refused (both runtimes would substitute them themselves, and under nc opencode the OpenRouter key is in the
- * environment), and so is an env name that starts with OPENROUTER_API_KEY. There is no starter that injects secrets
- * yet, so no headers either. Limit: a local server started by OpenCode under nc opencode inherits its environment,
- * OPENROUTER_API_KEY included; that stays until the starter comes.
+ * Every deviation is exit 2. `${`, `{env:` and `{file:` in any text of an entry are refused (both runtimes would
+ * substitute them themselves, and under nc opencode the OpenRouter key is in the environment), and so is an env name
+ * that starts with OPENROUTER_API_KEY. The one exception: ${NC_MCP_NAME} in a header value. nc claude exports the
+ * NC_MCP_* lines of secrets.env (and only those) and Claude Code substitutes them in headers (checked with 2.1.327),
+ * so the secret never lands in the repo or in ~/.nc/mcp. OpenCode gets no remote server with headers (nc opencode does
+ * not export NC_MCP_*). Limit: a local server started by OpenCode under nc opencode inherits its environment,
+ * OPENROUTER_API_KEY included.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { machine } from "./mode.ts";
-import { ModelsError, ROLE_NAME } from "./models.ts";
+import { absHome, ModelsError, ROLE_NAME } from "./models.ts";
 
 export type McpServer =
   | { name: string; type: "local"; command: string[]; env: Record<string, string> | null; machines: string[] }
-  | { name: string; type: "remote"; url: string; machines: string[] };
+  | { name: string; type: "remote"; url: string; headers: Record<string, string> | null; machines: string[] };
 
 export const MCP_FILE = "mcp/servers.yaml";
 const MACHINES = ["server", "mac"];
 const SECRET = /\$\{|\{env:|\{file:/;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const HEADER_NAME = /^[A-Za-z0-9-]+$/;
+const SECRET_REF = /\$\{NC_MCP_[A-Z0-9_]+\}/g;   // the only reference allowed, and only in a header value
+const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 const q = (v: unknown) => JSON.stringify(v) ?? String(v);
+
+/** The servers.yaml in force: the overlay's when ~/.nc/overlay/mcp/servers.yaml exists, else the repo's. MCP is host
+ * only, so no isolated case. Something there that is not a regular file is an error, never a silent fallback. */
+export function mcpFile(repo: string): { path: string; label: string } {
+  const file = join(absHome(), ".nc/overlay", MCP_FILE);
+  try {
+    if (!statSync(file).isFile()) throw new ModelsError(`${file} is not a regular file`);
+    return { path: file, label: `~/.nc/overlay/${MCP_FILE}` };
+  } catch (e: any) {
+    if (e instanceof ModelsError) throw e;
+    if (e?.code === "ENOENT" || e?.code === "ENOTDIR") return { path: join(repo, MCP_FILE), label: MCP_FILE };
+    throw new ModelsError(`${file} cannot be read (${e?.code ?? e})`);
+  }
+}
 
 /** Read and check mcp/servers.yaml; returns the servers whose machines name this machine (machine()). Every entry is
  * checked, also those for the other machine. Throws ModelsError (exit 2) for anything that is not understood. */
 export function loadServers(repo: string): McpServer[] {
   const here = machine();
+  const { path, label } = mcpFile(repo);
   const bad = (msg: string): never => {
-    throw new ModelsError(`${MCP_FILE}: ${msg}`);
+    throw new ModelsError(`${label}: ${msg}`);
   };
   const isMap = (v: unknown): v is Record<string, any> => !!v && typeof v === "object" && !Array.isArray(v);
   let text: string;
   try {
-    text = readFileSync(join(repo, MCP_FILE), "utf8");
+    text = readFileSync(path, "utf8");
   } catch (e: any) {
     return bad(`missing or not readable (${e?.code ?? e})`);
   }
@@ -59,21 +81,22 @@ export function loadServers(repo: string): McpServer[] {
   const servers: McpServer[] = [];
   for (const [name, raw] of Object.entries(doc.servers as Record<string, any>)) {
     const at = `servers.${name}`;
-    // Secrets first, in every text of the entry: the name, command, url, env names and values.
+    // Secrets first, in every text of the entry: the name, command, url, env names and values, header names.
+    // Header values are checked below: there ${NC_MCP_…} is allowed.
     const texts: string[] = [name];
     const collect = (v: unknown) => {
       if (typeof v === "string") texts.push(v);
       else if (Array.isArray(v)) v.forEach(collect);
       else if (isMap(v)) for (const [k, x] of Object.entries(v)) (texts.push(k), collect(x));
     };
-    collect(raw);
+    collect(isMap(raw) && isMap(raw.headers) ? { ...raw, headers: Object.keys(raw.headers) } : raw);
     const secret = texts.find((t) => SECRET.test(t));
     if (secret !== undefined)
-      bad(`${at}: ${q(secret)} – secrets in MCP not supported yet (\${…}, {env:…}, {file:…}; there is no starter yet that injects them)`);
+      bad(`${at}: ${q(secret)} – secrets in MCP only as \${NC_MCP_NAME} in a header value (\${…}, {env:…}, {file:…} anywhere else are refused)`);
     if (!ROLE_NAME.test(name)) bad(`${q(name)} is not a valid name (lowercase letters, digits, single hyphens)`);
     if (!isMap(raw)) bad(`${at} is not a mapping`);
     const e = raw as Record<string, any>;
-    const allowed = e.type === "local" ? ["type", "command", "env", "machines"] : e.type === "remote" ? ["type", "url", "machines"] : null;
+    const allowed = e.type === "local" ? ["type", "command", "env", "machines"] : e.type === "remote" ? ["type", "url", "headers", "machines"] : null;
     if (!allowed) bad(`${at}.type is ${e.type === undefined ? "not set" : q(e.type)}, allowed: local, remote`);
     const unknown = Object.keys(e).filter((k) => !allowed!.includes(k));
     if (unknown.length) bad(`${at} has an unknown key ${q(unknown[0])} (with type: ${e.type} allowed: ${allowed!.join(", ")})`);
@@ -99,10 +122,22 @@ export function loadServers(repo: string): McpServer[] {
     } else {
       let ok = false;
       try {
-        ok = typeof e.url === "string" && new URL(e.url).protocol === "https:";
+        const u = new URL(e.url);
+        ok = typeof e.url === "string" && (u.protocol === "https:" || (u.protocol === "http:" && LOCAL_HOSTS.includes(u.hostname)));
       } catch {}
-      if (!ok) bad(`${at}.url is ${q(e.url)}, expected an https address`);
-      servers.push({ name, type: "remote", url: e.url, machines: e.machines });
+      if (!ok) bad(`${at}.url is ${q(e.url)}, expected an https address (http only for ${LOCAL_HOSTS.join(", ")})`);
+      let headers: Record<string, string> | null = null;
+      if (e.headers !== undefined) {
+        if (!isMap(e.headers) || !Object.keys(e.headers).length) bad(`${at}.headers is not a non-empty mapping`);
+        for (const [k, v] of Object.entries(e.headers as Record<string, unknown>)) {
+          if (!HEADER_NAME.test(k)) bad(`${at}.headers: ${q(k)} is not a header name`);
+          if (typeof v !== "string" || /[\r\n]/.test(v)) bad(`${at}.headers.${k} is ${q(v)}, expected a YAML text on one line`);
+          if (SECRET.test((v as string).replace(SECRET_REF, "")))
+            bad(`${at}.headers.${k}: ${q(v)} – only \${NC_MCP_NAME} references are allowed (A-Z, 0-9, _; the value goes into secrets.env)`);
+        }
+        headers = e.headers;
+      }
+      servers.push({ name, type: "remote", url: e.url, headers, machines: e.machines });
     }
   }
   return servers.filter((s) => s.machines.includes(here));
@@ -114,17 +149,18 @@ export function claudeMcpFile(servers: McpServer[]): string {
   for (const s of servers)
     mcpServers[s.name] = s.type === "local"
       ? { command: s.command[0], args: s.command.slice(1), ...(s.env ? { env: s.env } : {}) }
-      : { type: "http", url: s.url };
+      : { type: "http", url: s.url, ...(s.headers ? { headers: s.headers } : {}) };
   return JSON.stringify({ mcpServers }, null, 2) + "\n";
 }
 
 export const MCP_GENERATED = "// GENERATED by nc-harness – do not edit by hand";
 
 /** <OpenCode config dir>/opencode.jsonc: OpenCode 2.2.7 loads it after opencode.json and merges mcp.servers by name
- * (checked with OpenCode 2.2.7). oauth: false – remote servers only without secrets, no OAuth flow. */
+ * (checked with OpenCode 2.2.7). oauth: false – remote servers only without secrets, no OAuth flow. A remote server
+ * with headers is left out: nc opencode does not export NC_MCP_*, the header would go out empty. */
 export function opencodeMcpFile(servers: McpServer[]): string {
   const out: Record<string, unknown> = {};
-  for (const s of servers)
+  for (const s of servers.filter((x) => x.type === "local" || !x.headers))
     out[s.name] = s.type === "local"
       ? { type: "local", command: s.command, ...(s.env ? { environment: s.env } : {}) }
       : { type: "remote", url: s.url, oauth: false };

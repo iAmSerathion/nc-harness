@@ -19,6 +19,9 @@
 #   5. exec claude --model M --effort S [--mcp-config=~/.nc/mcp/claude.json] "$@"; a --model/--effort of the caller
 #      wins for its own parameter. The MCP file (nc generate, from mcp/servers.yaml) only when it exists, and only
 #      with `=`: --mcp-config takes several values and would swallow a bare prompt behind it
+#   6. with the MCP file, the NC_MCP_* lines of secrets.env (NC_SECRETS) are exported for Claude, which substitutes
+#      ${NC_MCP_…} in MCP headers itself. Parsed, never sourced; no other line is read (OPENROUTER_API_KEY stays out).
+#      A missing file is silent; a file with loose permissions or a bad value is a warning, claude still starts
 set -uo pipefail   # no -e: a failing nc models must not stop the start
 
 # Subcommands of Claude Code 2.1.325: `claude --help`, plus hidden ones (from remote-control on) that do not
@@ -78,7 +81,31 @@ elif [ "$rc" -ne 1 ]; then
   warn "orchestrator setting not read (nc models orchestrator: exit $rc${detail:+, $detail}) – starting without --model and --effort"
 fi
 
+export_mcp_secrets() {
+  local LC_ALL=C f="${NC_SECRETS:-$HOME/.config/nc-harness/secrets.env}" line name value perm
+  [ -f "$f" ] && [ ! -L "$f" ] || return 0
+  perm="$(stat -c %a "$f" 2>/dev/null || stat -f %Lp "$f")"
+  [ $(( 8#$perm & 8#077 )) -eq 0 ] || { warn "$f has permissions $perm, expected 600 (chmod 600 $f) – NC_MCP_* not exported"; return 0; }
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line#$'\xef\xbb\xbf'}"
+    line="${line//$'\r'/}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    case "$line" in export[[:space:]]*) line="${line#export}"; line="${line#"${line%%[![:space:]]*}"}" ;; esac
+    [[ "$line" =~ ^(NC_MCP_[A-Z0-9_]+)=(.*)$ ]] || continue
+    name="${BASH_REMATCH[1]}" value="${BASH_REMATCH[2]}"
+    value="${value%"${value##*[![:space:]]}"}"
+    if [ "${#value}" -ge 2 ]; then
+      case "$value" in \"*\"|\'*\') [ "${value:0:1}" = "${value: -1}" ] && value="${value:1:${#value}-2}" ;; esac
+    fi
+    case "$value" in ""|*[!\!-\~]*) warn "$name in $f is empty or invalid (space, comment or special character) – not exported, value not printed"; continue ;; esac
+    export "$name=$value"
+  done < "$f"
+}
+
 mcp="${HOME:-}/.nc/mcp/claude.json"   # without HOME (env -i): no MCP file, claude still starts
-[ -z "${HOME:-}" ] || [ ! -f "$mcp" ] || params+=("--mcp-config=$mcp")
+if [ -n "${HOME:-}" ] && [ -f "$mcp" ]; then
+  params+=("--mcp-config=$mcp")
+  export_mcp_secrets
+fi
 
 exec claude ${params[@]+"${params[@]}"} "$@"   # bash 3.2 (macOS): an empty array is "unbound" under set -u
