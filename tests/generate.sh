@@ -557,11 +557,14 @@ r "$GOOD" "url: https://mcp.example.com/v2" "url: https://mcp.example.com/{env:X
 r "$GOOD" "url: https://mcp.example.com/v2" "url: https://mcp.example.com/\${NC_MCP_A}" > "$SV"; mbroken "secrets in MCP only as"
 H="url: https://mcp.example.com/v2
     headers:"
-r "$GOOD" "url: https://mcp.example.com/v2" "$H { Authorization: \"Bearer \${X}\" }" > "$SV";                  mbroken 'only \${NC_MCP_NAME} references are allowed'
-r "$GOOD" "url: https://mcp.example.com/v2" "$H { Authorization: \"Bearer \${OPENROUTER_API_KEY}\" }" > "$SV"; mbroken 'only \${NC_MCP_NAME} references are allowed'
-r "$GOOD" "url: https://mcp.example.com/v2" "$H { Authorization: \"{env:NC_MCP_A}\" }" > "$SV";                 mbroken 'only \${NC_MCP_NAME} references are allowed'
-r "$GOOD" "url: https://mcp.example.com/v2" "$H { Authorization: \"\${NC_MCP_a}\" }" > "$SV";                   mbroken 'only \${NC_MCP_NAME} references are allowed'
-r "$GOOD" "url: https://mcp.example.com/v2" "$H { Authorization: 1 }" > "$SV";                                 mbroken "headers.Authorization is 1, expected a YAML text on one line"
+r "$GOOD" "url: https://mcp.example.com/v2" "$H { Authorization: \"Bearer \${X}\" }" > "$SV";                  mbroken 'only plain \${NC_MCP_NAME} references'
+r "$GOOD" "url: https://mcp.example.com/v2" "$H { Authorization: \"Bearer \${OPENROUTER_API_KEY}\" }" > "$SV"; mbroken 'only plain \${NC_MCP_NAME} references'
+r "$GOOD" "url: https://mcp.example.com/v2" "$H { Authorization: \"{env:NC_MCP_A}\" }" > "$SV";                 mbroken 'only plain \${NC_MCP_NAME} references'
+r "$GOOD" "url: https://mcp.example.com/v2" "$H { Authorization: \"\${NC_MCP_a}\" }" > "$SV";                   mbroken 'only plain \${NC_MCP_NAME} references'
+r "$GOOD" "url: https://mcp.example.com/v2" "$H { Authorization: 1 }" > "$SV";                                 mbroken "headers.Authorization is not a YAML text on one line"
+r "$GOOD" "url: https://mcp.example.com/v2" "$H { Authorization: \"\${NC_MCP_A:-\${OPENROUTER_API_KEY}}\" }" > "$SV"; mbroken 'only plain \${NC_MCP_NAME} references'
+r "$GOOD" "url: https://mcp.example.com/v2" "$H { Authorization: \"Bearer sk-secret \${X}\" }" > "$SV"
+expect 2 "value not printed" nc generate; grep -q "sk-secret" "$T/out" "$T/err" && fail "a header value was printed"
 r "$GOOD" "url: https://mcp.example.com/v2" "$H {}" > "$SV";                                                   mbroken "headers is not a non-empty mapping"
 r "$GOOD" "url: https://mcp.example.com/v2" "$H { \"Auth orization\": \"x\" }" > "$SV";                         mbroken '"Auth orization" is not a header name'
 r "$GOOD" "url: https://mcp.example.com/v2" "url: http://localhost.example.com/v2" > "$SV";                    mbroken "expected an https address"
@@ -610,9 +613,12 @@ obroken() {  # like mbroken, but the overlay itself lies under ~/.nc: compare on
 }
 printf 'servers: [\n' > "$OV/mcp/servers.yaml";                                     obroken "~/.nc/overlay/mcp/servers.yaml: not valid YAML"
 rm "$OV/mcp/servers.yaml" && mkdir "$OV/mcp/servers.yaml";                          obroken "servers.yaml is not a regular file"
+rmdir "$OV/mcp/servers.yaml" && ln -s "$T/nowhere" "$OV/mcp/servers.yaml";          obroken "a dangling link?"
+rm "$OV/mcp/servers.yaml" && rmdir "$OV/mcp" && ln -s "$T/nowhere" "$OV/mcp";        obroken "a dangling link?"
+rm "$OV/mcp"
 rm -rf "$OV" && expect 0 "replaced   ~/.nc/mcp/claude.json" nc generate
 is "$(jc "$MC" | grep -c k-remote)" "1" "back to the repo's servers.yaml"
-ok "~/.nc/overlay/mcp/servers.yaml wins over the repo's (an overlay without it uses the repo's); broken or not a file there: exit 2 with the overlay path, nothing written"
+ok "~/.nc/overlay/mcp/servers.yaml wins over the repo's (an overlay without it uses the repo's); broken, not a file or a dangling link (file or folder) there: exit 2 with the overlay path, nothing written"
 
 mkdir -p "$T/mcp-real" && mv "$HOME/.nc/mcp" "$T/mcp-old" && ln -s "$T/mcp-real" "$HOME/.nc/mcp"
 expect 2 "~/.nc/mcp is a link" nc generate

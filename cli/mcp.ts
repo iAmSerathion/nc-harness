@@ -17,10 +17,11 @@
  * that starts with OPENROUTER_API_KEY. The one exception: ${NC_MCP_NAME} in a header value. nc claude exports the
  * NC_MCP_* lines of secrets.env (and only those) and Claude Code substitutes them in headers (checked with 2.1.327),
  * so the secret never lands in the repo or in ~/.nc/mcp. OpenCode gets no remote server with headers (nc opencode does
- * not export NC_MCP_*). Limit: a local server started by OpenCode under nc opencode inherits its environment,
- * OPENROUTER_API_KEY included.
+ * not export NC_MCP_*). Limits: an exported NC_MCP_* value is in Claude's environment, so its Bash tool, hooks and
+ * local MCP servers can read it (nc claude exports only the names claude.json references); a local server started by
+ * OpenCode under nc opencode inherits its environment, OPENROUTER_API_KEY included.
  */
-import { readFileSync, statSync } from "node:fs";
+import { lstatSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { machine } from "./mode.ts";
 import { absHome, ModelsError, ROLE_NAME } from "./models.ts";
@@ -41,15 +42,23 @@ const q = (v: unknown) => JSON.stringify(v) ?? String(v);
 /** The servers.yaml in force: the overlay's when ~/.nc/overlay/mcp/servers.yaml exists, else the repo's. MCP is host
  * only, so no isolated case. Something there that is not a regular file is an error, never a silent fallback. */
 export function mcpFile(repo: string): { path: string; label: string } {
-  const file = join(absHome(), ".nc/overlay", MCP_FILE);
-  try {
-    if (!statSync(file).isFile()) throw new ModelsError(`${file} is not a regular file`);
-    return { path: file, label: `~/.nc/overlay/${MCP_FILE}` };
-  } catch (e: any) {
-    if (e instanceof ModelsError) throw e;
-    if (e?.code === "ENOENT" || e?.code === "ENOTDIR") return { path: join(repo, MCP_FILE), label: MCP_FILE };
-    throw new ModelsError(`${file} cannot be read (${e?.code ?? e})`);
+  const dir = join(absHome(), ".nc/overlay", "mcp");
+  const file = join(dir, "servers.yaml");
+  for (const p of [dir, file]) {   // a dangling link (folder or file) is an error: lstat sees it, stat does not
+    try {
+      lstatSync(p);
+    } catch (e: any) {
+      if (e?.code === "ENOENT" || e?.code === "ENOTDIR") return { path: join(repo, MCP_FILE), label: MCP_FILE };
+      throw new ModelsError(`${p} cannot be read (${e?.code ?? e})`);
+    }
+    try {
+      statSync(p);
+    } catch (e: any) {
+      throw new ModelsError(`${p} cannot be read (${e?.code ?? e}) – a dangling link?`);
+    }
   }
+  if (!statSync(file).isFile()) throw new ModelsError(`${file} is not a regular file`);
+  return { path: file, label: `~/.nc/overlay/${MCP_FILE}` };
 }
 
 /** Read and check mcp/servers.yaml; returns the servers whose machines name this machine (machine()). Every entry is
@@ -131,9 +140,10 @@ export function loadServers(repo: string): McpServer[] {
         if (!isMap(e.headers) || !Object.keys(e.headers).length) bad(`${at}.headers is not a non-empty mapping`);
         for (const [k, v] of Object.entries(e.headers as Record<string, unknown>)) {
           if (!HEADER_NAME.test(k)) bad(`${at}.headers: ${q(k)} is not a header name`);
-          if (typeof v !== "string" || /[\r\n]/.test(v)) bad(`${at}.headers.${k} is ${q(v)}, expected a YAML text on one line`);
+          // The value is never printed: it may hold a pasted token.
+          if (typeof v !== "string" || /[\r\n]/.test(v)) bad(`${at}.headers.${k} is not a YAML text on one line (value not printed)`);
           if (SECRET.test((v as string).replace(SECRET_REF, "")))
-            bad(`${at}.headers.${k}: ${q(v)} – only \${NC_MCP_NAME} references are allowed (A-Z, 0-9, _; the value goes into secrets.env)`);
+            bad(`${at}.headers.${k}: only plain \${NC_MCP_NAME} references are allowed (A-Z, 0-9, _; no :-default; the value goes into secrets.env; value not printed)`);
         }
         headers = e.headers;
       }
