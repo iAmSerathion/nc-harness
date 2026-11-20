@@ -160,7 +160,7 @@ For a task container `nc-work` calls `nc generate --out DIR --path PROJECT` on t
 - **Takeover.** Parallel writers in Claude Code get their own worktrees. The orchestrator applies their commits to its branch with `git cherry-pick`.
 - **Closing.** At the end it runs the whole test suite once, answers every must against the whole diff and reports per task and per must. It never merges and never pushes.
 
-At fixed steps it publishes its state with `nc orchestrator status` to a status file (`"v": 3`), which the orchestrator card in herdr-nc reads. A failed write is one warning line and never stops the task. Format and plan details: [orchestrator/base.md](orchestrator/base.md).
+At fixed steps it publishes its state with `nc orchestrator status` to a status file (`"v": 3`), which the orchestrator card in herdr-nc reads. A failed write is one warning line and never stops the task. After a compaction a Claude Code hook prints the open run from that file back into the context (`nc hooks`), so the orchestrator keeps its plan, musts and task results. Format and plan details: [orchestrator/base.md](orchestrator/base.md).
 
 ### Delegation to OpenCode workers
 
@@ -316,9 +316,11 @@ Without `--path` the current folder applies. In a task container the project pat
 ```bash
 nc orchestrator claude                                # the procedure: orchestrator/base.md plus overlays/claude.md
 nc orchestrator status crew|plan|state|task|clear ... # write the status file for the Herdr card
+nc orchestrator status context                        # the open run as text (the SessionStart compact hook runs it)
+nc hooks [--check]                                    # add that hook to ~/.claude/settings.json (install.sh runs it)
 ```
 
-The status file is `~/.claude/nc-orchestrator/<sessionId>.json` (`"v": 3`: crew, state, musts, plan, per-task status and evidence).
+The status file is `~/.claude/nc-orchestrator/<sessionId>.json` (`"v": 3`: crew, state, musts, plan, per-task status and evidence). `nc hooks` adds or replaces only its own `SessionStart` entry (matcher `compact`) and keeps every other key and hook; the old file goes to `~/.nc/backup/<date>/` first. `context` prints nothing when the session has no run or the run is `done` or `error`.
 
 ### Delegation (server with nc-work)
 
@@ -359,7 +361,8 @@ tests/smoke.sh                 # install.sh, nc doctor, nc opencode, nc version 
 tests/models.sh                # nc models and the gate in nc opencode
 tests/generate.sh              # nc generate: agent files for both runtimes, MCP files
 tests/claude.sh                # nc claude with a dummy instead of Claude Code
-tests/orchestrator-status.sh   # nc orchestrator status
+tests/orchestrator-status.sh   # nc orchestrator status, context included
+tests/hooks.sh                 # nc hooks on a throwaway ~/.claude/settings.json
 tests/memory.sh                # nc memory with a local bare repo (Linux: needs flock, timeout, setsid)
 tests/delegate.sh              # nc delegate with dummies for nc-work, hc and the broker (Linux, likewise)
 tests/language.sh              # language guard: the repo is English only

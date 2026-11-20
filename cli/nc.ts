@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { delegate } from "./delegate.ts";
 import { doctor } from "./doctor.ts";
 import { generate } from "./generate.ts";
+import { hooks } from "./hooks.ts";
 import { memory } from "./memory.ts";
 import { commit, mode } from "./mode.ts";
 import { models } from "./models.ts";
@@ -20,12 +21,14 @@ const HELP = `nc – shared commands of nc-harness
                        from roles/ and models.yaml, and the MCP files from mcp/servers.yaml
   nc generate --out DIR --path PROJECT_PATH [--check]
                        the agents for a task container (nc-work): DIR/claude, DIR/opencode, policy of PROJECT_PATH; no MCP
+  nc hooks [--check]   the harness's Claude Code hooks in ~/.claude/settings.json (SessionStart compact:
+                       restores an open orchestrator run after a compaction)
   nc memory …          shared memory: show, search, add, sync, apply (nc memory help)
   nc models …          what models.yaml allows in a folder: show, resolve, check, orchestrator (nc models help)
   nc opencode [ARGS]   start OpenCode with the OpenRouter key for this process only
   nc orchestrator OVERLAY
                        the orchestrator's procedure: orchestrator/base.md plus overlays/OVERLAY.md (claude)
-  nc orchestrator status crew|plan|state|task|clear …
+  nc orchestrator status crew|plan|state|task|clear|context …
                        publish the orchestrator's state for the herdr card (~/.claude/nc-orchestrator/<session>.json)
   nc version           harness commit and mode
   nc help              this text
@@ -44,6 +47,8 @@ switch (cmd) {
     process.exit(memory(repo, home, args));
   case "models":
     process.exit(models(repo, args));
+  case "hooks":
+    process.exit(hooks(home, args));
   case "orchestrator":
     process.exit(orchestrator(repo, home, args));
   case "version":

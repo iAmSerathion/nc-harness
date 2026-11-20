@@ -223,6 +223,21 @@ else
   "$REPO/bin/nc" generate || die "nc generate failed – check models.yaml, roles/, orchestrator/ or mcp/servers.yaml (nc doctor)"
 fi
 
+# --- 3c. Claude Code hooks: nc hooks (SessionStart compact -> nc orchestrator status context) ------------------
+# Only our entry in ~/.claude/settings.json is added or replaced; the old file goes to ~/.nc/backup/<date>/ first.
+# Not in an nc-work container (no orchestrator status file there). Dry run: only `nc hooks --check`.
+echo
+echo "Hooks"
+if [ -n "${NC_HARNESS_VERSION:-}" ]; then
+  say skipped "in a container"
+elif [ "$DRY_RUN" = 1 ]; then
+  rc=0; BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 "$REPO/bin/nc" hooks --check || rc=$?
+  [ "$rc" -le 1 ] || say failed "nc hooks --check: exit $rc – the real run would leave settings.json as it is"
+else
+  # A settings.json nc hooks cannot read stops nothing else: only the restore after a compaction is missing.
+  "$REPO/bin/nc" hooks || say failed "nc hooks – ~/.claude/settings.json left as it was (see above, nc doctor warns)"
+fi
+
 # --- 4. shared memory: clone NC_MEMORY_REMOTE to ~/.nc/memory, or fast-forward it ------------------------------
 # Never in an nc-work container (no network, no gh): nc-work mounts a read-only view there.
 # There is no default remote: without NC_MEMORY_REMOTE a missing checkout is skipped and an existing one is updated

@@ -2,6 +2,7 @@ import { accessSync, constants, existsSync, lstatSync, readFileSync, readlinkSyn
 import { join } from "node:path";
 import { delegateCheckIsolated } from "./delegate.ts";
 import { agentChecks, agentChecksIsolated, claudeEnvChecks, mcpChecks } from "./generate.ts";
+import { HooksError, hookState, parseSettings, readSettings } from "./hooks.ts";
 import { expandSkills, readManifest, staleSkillLinks } from "./manifest.ts";
 import { memoryChecksDirect, memoryChecksIsolated } from "./memory.ts";
 import { commit, machine, mode, ncHome, opencodeConfigDir } from "./mode.ts";
@@ -184,6 +185,20 @@ function overlayCheck(repo: string, home: string, tilde: (p: string) => string):
   return { name: "overlay", status: "ok", detail: `${tilde(dir)}: ${files.join(", ")}` };
 }
 
+/** The harness's Claude Code hook (nc hooks): a warning when it is missing, since only the restore after a
+ * compaction depends on it. */
+function claudeHookCheck(home: string): Check {
+  const name = "Claude Code compact hook";
+  try {
+    const state = hookState(parseSettings(readSettings(home).text));
+    return state === "ok"
+      ? { name, status: "ok", detail: "SessionStart compact runs nc orchestrator status context" }
+      : { name, status: "warn", detail: `${state} – nc hooks (or ./install.sh)` };
+  } catch (e: any) {
+    return { name, status: "warn", detail: `~/.claude/settings.json: ${e instanceof HooksError ? e.message : e?.code ?? e?.message ?? e}` };
+  }
+}
+
 const ISOLATION_SERVER_ONLY = "isolation only on the server";
 
 function directChecks(repo: string, home: string, tilde: (p: string) => string): Check[] {
@@ -293,6 +308,7 @@ function directChecks(repo: string, home: string, tilde: (p: string) => string):
   // Subagent files from roles/ and models.yaml and variables that override them.
   checks.push(...agentChecks(repo, home));
   checks.push(...claudeEnvChecks());
+  checks.push(claudeHookCheck(home));
 
   // MCP files from mcp/servers.yaml, host only.
   checks.push(...mcpChecks(repo, home));
