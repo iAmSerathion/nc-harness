@@ -13,4 +13,10 @@
 #       url: https://example.com/mcp    # Streamable HTTP, without secrets
 #       machines: [server]
 
-servers: {}
+servers:
+  # Mobbin: real app and web screens for design inspiration (fieldwork skill). Official hosted server,
+  # browser OAuth on first use via /mcp; needs a Mobbin account. https://github.com/mobbin/mobbin-mcp-server
+  mobbin:
+    type: remote
+    url: https://api.mobbin.com/mcp
+    machines: [mac]
